@@ -1,0 +1,3 @@
+/home/rowickip/GPUPROJECT1/cmake-build-debug/CMakeFiles/GPUPROJECT1.dir
+/home/rowickip/GPUPROJECT1/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/rowickip/GPUPROJECT1/cmake-build-debug/CMakeFiles/rebuild_cache.dir
