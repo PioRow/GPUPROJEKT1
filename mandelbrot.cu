@@ -14,7 +14,7 @@ static int m = 512;
 static int max_iter = 100;
 static uint32_t *colors;
 uint32_t *dev_colors;
-// X11 data 
+// X11 data
 #ifdef SHOW_X
 static Display *dpy;
 static XImage *bitmap;
@@ -22,76 +22,79 @@ static Window win;
 static Atom wmDeleteMessage;
 static GC gc;
 
-//destroy window and x variables 
+//destroy window and x variables
 static void exit_x11(void){
 	XDestroyWindow(dpy, win);
 	XCloseDisplay(dpy);
 }
 
-// create Xwindow 
+// create Xwindow
 static void init_x11(){
-	// Attempt to open the display 
+	// Attempt to open the display
 	dpy = XOpenDisplay(NULL);
-	
+
 	// Failure
-	if (!dpy) exit(0);
-	
+	if (!dpy){
+      printf("error");
+      exit(0);
+    }
+
 	uint32_t long white = WhitePixel(dpy,DefaultScreen(dpy));
 	uint32_t long black = BlackPixel(dpy,DefaultScreen(dpy));
-	
+
 
 	win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
             0, 0, dim, dim, 0, black, white);
-	
-	// We want to be notified when the window appears 
+
+	// We want to be notified when the window appears
 	XSelectInput(dpy, win, StructureNotifyMask);
-	
-	// Make it appear 
+
+	// Make it appear
 	XMapWindow(dpy, win);
-	
+
 	while (1){
         XEvent e;
 		XNextEvent(dpy, &e);
 		if (e.type == MapNotify) break;
 	}
-	
+
 	XTextProperty tp;
 	char name[128] = "Mandelbrot";
 	char *n = name;
 	Status st = XStringListToTextProperty(&n, 1, &tp);
 	if (st) XSetWMName(dpy, win, &tp);
 
-	// Wait for the MapNotify event 
+	// Wait for the MapNotify event
 	XFlush(dpy);
-    int depth = DefaultDepth(dpy, DefaultScreen(dpy));    
+    int depth = DefaultDepth(dpy, DefaultScreen(dpy));
     Visual *visual = DefaultVisual(dpy, DefaultScreen(dpy));
 
     bitmap = XCreateImage(dpy, visual, depth, ZPixmap, 0,
             (char*) malloc(dim * dim * 32), dim, dim, 32, 0);
 
-	// Init GC 
+	// Init GC
 	gc = XCreateGC(dpy, win, 0, NULL);
 	XSetForeground(dpy, gc, black);
-	
+
 	XSelectInput(dpy, win, ExposureMask | KeyPressMask | StructureNotifyMask);
-	
+
 	wmDeleteMessage = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
 	XSetWMProtocols(dpy, win, &wmDeleteMessage, 1);
 }
 #endif
 
-//create colors used to draw the mandelbrot set 
+//create colors used to draw the mandelbrot set
 void init_colours(void) {
     float freq = 6.3 / max_iter;
-	for (int i = 0; i < max_iter; i++){
+    for (int i = 0; i < max_iter; i++){
         char r = sin(freq * i + 3) * 127 + 128;
         char g = sin(freq * i + 5) * 127 + 128;
         char b = sin(freq * i + 1) * 127 + 128;
-		
-		colors[i] = b + 256 * g + 256 * 256 * r;
-	}
-	
-	colors[max_iter] = 0;
+
+        colors[i] = b + 256 * g + 256 * 256 * r;
+    }
+
+    colors[max_iter] = 0;
 }
 
 void checkErr(cudaError_t err, char* msg){
@@ -101,7 +104,7 @@ void checkErr(cudaError_t err, char* msg){
     }
 }
 
-/* the mandelbrot set is defined as all complex numbers c such that the 
+/* the mandelbrot set is defined as all complex numbers c such that the
    equation z = z^2 + c remains bounded. In practice, we calculate max_iter
    iterations of this formula and if the magnitude of z is < 2 we assume it
    is in the set. The greater max_iters the more accurate our representation */
@@ -114,23 +117,23 @@ __device__ uint32_t mandel_double(double cr, double ci, int max_iter) {
     uint32_t i;
 
     for (i = 0; i < max_iter; i++){
-		zi = zr * zi;
-		zi += zi;
-		zi += ci;
-		zr = zrsqr - zisqr + cr;
-		zrsqr = zr * zr;
-		zisqr = zi * zi;
-		
-    //the fewer iterations it takes to diverge, the farther from the set
-		if (zrsqr + zisqr > 4.0) break;
+        zi = zr * zi;
+        zi += zi;
+        zi += ci;
+        zr = zrsqr - zisqr + cr;
+        zrsqr = zr * zr;
+        zisqr = zi * zi;
+
+        //the fewer iterations it takes to diverge, the farther from the set
+        if (zrsqr + zisqr > 4.0) break;
     }
-	
+
     return i;
 }
 
 /* turn each x y coordinate into a complex number and run the mandelbrot formula on it */
 __global__ void mandel_kernel(uint32_t *counts, double xmin, double ymin,
-            double step, int max_iter, int dim, uint32_t *colors) {
+                              double step, int max_iter, int dim, uint32_t *colors) {
     int pix_per_thread = dim * dim / (gridDim.x * blockDim.x);
     int tId = blockDim.x * blockIdx.x + threadIdx.x;
     int offset = pix_per_thread * tId;
@@ -142,7 +145,7 @@ __global__ void mandel_kernel(uint32_t *counts, double xmin, double ymin,
         counts[y * dim + x]  = colors[mandel_double(cr, ci, max_iter)];
     }
     if (gridDim.x * blockDim.x * pix_per_thread < dim * dim
-            && tId < (dim * dim) - (blockDim.x * gridDim.x)){
+        && tId < (dim * dim) - (blockDim.x * gridDim.x)){
         int i = blockDim.x * gridDim.x * pix_per_thread + tId;
         int x = i % dim;
         int y = i / dim;
@@ -150,12 +153,12 @@ __global__ void mandel_kernel(uint32_t *counts, double xmin, double ymin,
         double ci = ymin + y * step;
         counts[y * dim + x]  = colors[mandel_double(cr, ci, max_iter)];
     }
-    
+
 }
 
 /* For each point, evaluate its colour */
 static void display_double(double xcen, double ycen, double scale,
-        uint32_t *dev_counts, uint32_t *colors){
+                           uint32_t *dev_counts, uint32_t *colors){
     dim3 numBlocks(dim,dim);
     double xmin = xcen - (scale/2);
     double ymin = ycen - (scale/2);
@@ -164,7 +167,7 @@ static void display_double(double xcen, double ycen, double scale,
 
 #ifdef BENCHMARK
     double start = omp_get_wtime();
-#endif 
+#endif
 
     mandel_kernel<<<n, m>>>(dev_counts, xmin , ymin, step, max_iter, dim, colors);
     checkErr(err, "Failed to run Kernel");
@@ -185,20 +188,20 @@ static void display_double(double xcen, double ycen, double scale,
     XPutImage(dpy, win, gc, bitmap,
         0, 0, 0, 0,
         dim, dim);
-    XFlush(dpy); 
+    XFlush(dpy);
 #endif
 }
 
 
 int main(int argc, char** argv){
     cudaError_t err = cudaSuccess;
-    if (argc >= 2) 
+    if (argc >= 2)
         n = atoi(argv[1]);
-    if (argc >= 3) 
+    if (argc >= 3)
         m = atoi(argv[2]);
-    if (argc >= 4) 
+    if (argc >= 4)
         dim = atoi(argv[3]);
-    if (argc >= 5) 
+    if (argc >= 5)
         max_iter = atoi(argv[4]);
     size_t color_size = (max_iter +1) * sizeof(uint32_t);
     colors = (uint32_t *) malloc(color_size);
@@ -208,9 +211,9 @@ int main(int argc, char** argv){
     double scale = 3;
 
 #ifdef SHOW_X
-	init_x11();
+    init_x11();
 #endif
-	init_colours();
+    init_colours();
     cudaMemcpy(dev_colors, colors, color_size, cudaMemcpyHostToDevice);
     free(colors);
 
@@ -219,14 +222,14 @@ int main(int argc, char** argv){
     err = cudaMalloc(&dev_counts, img_size);
     checkErr(err, "Failed to allocate dev_counts");
 
-	display_double(xcen, ycen, scale, dev_counts, dev_colors);
+    display_double(xcen, ycen, scale, dev_counts, dev_colors);
 
 #ifdef SHOW_X
-	while(1) {
+    while(1) {
 		XEvent event;
 		KeySym key;
 		char text[255];
-		
+
 		XNextEvent(dpy, &event);
         while (XPending(dpy) > 0)
             XNextEvent(dpy, &event);
@@ -236,12 +239,12 @@ int main(int argc, char** argv){
 				0, 0, 0, 0,
 				dim, dim);
 		}
-		
+
 		/* Press 'x' to exit */
 		if ((event.type == KeyPress) &&
 			XLookupString(&event.xkey, text, 255, &key, 0) == 1)
 			if (text[0] == 'x') break;
-		
+
 		/* Press 'a' to go left */
 		if ((event.type == KeyPress) &&
 			XLookupString(&event.xkey, text, 255, &key, 0) == 1)
@@ -300,6 +303,6 @@ int main(int argc, char** argv){
 #endif
     cudaFree(dev_counts);
     cudaFree(dev_colors);
-	
-	return 0;
+
+    return 0;
 }
